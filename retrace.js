@@ -6,7 +6,7 @@ const logbox = document.getElementById('logbox');
   const confidence = document.getElementById('confidence');
   const reason = document.getElementById('reason');
 
-  const API_URL = 'http://localhost:8000/classify';
+  const API_URL = 'https://retrace-backend-yey1.onrender.com/classify';
 
   const samples = {
     race: `AssertionError: Timed out retrying after 4000ms: expected '#cart-badge' to have text '3'
