@@ -1,0 +1,73 @@
+# Retrace CI integration
+#
+# Drop this file into a repo at: .github/workflows/retrace-classify.yml
+#
+# What it does:
+#   1. Runs your test suite.
+#   2. If tests fail, grabs the failure log.
+#   3. Sends the log to your deployed Retrace API (/classify).
+#   4. Posts the classification (cause, confidence, reasoning) as a PR comment.
+#
+# Requirements:
+#   - RETRACE_API_URL: set as a repo variable (Settings > Secrets and variables >
+#     Actions > Variables), e.g. https://your-retrace-backend.onrender.com/classify
+#   - No extra secrets needed for posting the comment — GITHUB_TOKEN is provided
+#     automatically by GitHub Actions.
+
+name: Retrace failure classification
+
+on:
+  pull_request:
+
+jobs:
+  test-and-classify:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Run tests, capture output to a file, don't fail the step itself yet
+      # so we can still read the log below.
+      - name: Run tests
+        id: run_tests
+        run: npm test 2>&1 | tee test-output.log
+        continue-on-error: true
+
+      - name: Classify failure with Retrace
+        if: steps.run_tests.outcome == 'failure'
+        id: classify
+        run: |
+          LOG_CONTENT=$(tail -c 8000 test-output.log | python3 -c "import json,sys; print(json.dumps(sys.stdin.read()))")
+          RESPONSE=$(curl -s -X POST "${{ vars.RETRACE_API_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "{\"log\": $LOG_CONTENT}")
+          echo "response=$RESPONSE" >> "$GITHUB_OUTPUT"
+
+      - name: Post classification as PR comment
+        if: steps.run_tests.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const response = JSON.parse(`${{ steps.classify.outputs.response }}`);
+            const body = `**Retrace classification:** \`${response.cause}\` (${Math.round(response.confidence * 100)}% confidence)\n\n${response.reasoning}`;
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      # Fail the job for real now that we've classified, so CI still reports red.
+      - name: Fail job if tests failed
+        if: steps.run_tests.outcome == 'failure'
+        run: exit 1

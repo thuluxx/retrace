@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Retrace — find out why your tests flake</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="retrace.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap header-inner">
+    <div class="wordmark">retrace<span>.</span></div>
+    <nav>
+      <a href="#demo">Demo</a>
+      <a href="#causes">Causes</a>
+      <a href="#why">Why it matters</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <h1>Your test suite is lying to you about what's broken.</h1>
+    <p class="lede">Retrace reads a failing CI run and tells you whether it's a real regression or one of the five usual suspects behind flaky tests — before you re-run the pipeline for the third time.</p>
+
+    <div class="demo" id="demo">
+      <div class="demo-head">
+        <span id="demoHeadLabel">failure_log.txt</span>
+        <div class="demo-head-right">
+          <span id="charcount">0 characters</span>
+          <button class="mode-toggle" id="modeToggle" type="button">Switch to batch mode</button>
+        </div>
+      </div>
+
+      <div class="demo-body" id="singleMode">
+        <div class="demo-input">
+          <label for="logbox">Paste a failure log, or try one:</label>
+          <textarea id="logbox" placeholder="AssertionError: expected element to be visible
+  at LoginPage.submit (login.spec.ts:41)
+  ..."></textarea>
+          <div class="sample-row">
+            <button class="sample-btn" data-sample="race">Race condition</button>
+            <button class="sample-btn" data-sample="wait">Hard-coded wait</button>
+            <button class="sample-btn" data-sample="net">Network dependency</button>
+            <button class="sample-btn" data-sample="real">Real regression</button>
+          </div>
+          <div class="upload-row">
+            <label class="upload-btn" for="fileInput">Upload .log/.txt file</label>
+            <input type="file" id="fileInput" accept=".txt,.log" hidden>
+            <span class="upload-filename" id="uploadFilename"></span>
+          </div>
+          <button class="classify-btn" id="classifyBtn">Classify failure</button>
+        </div>
+        <div class="demo-output">
+          <span class="out-label">Classification</span>
+          <p class="verdict-empty" id="emptyState">Paste a log and classify it — nothing's been analyzed yet.</p>
+          <div class="skeleton" id="skeleton">
+            <div class="skel-line tag"></div>
+            <div class="skel-line r1"></div>
+            <div class="skel-line r2"></div>
+            <div class="skel-line r3"></div>
+          </div>
+          <div class="verdict" id="verdict">
+            <div class="verdict-top">
+              <span class="cause-tag" id="causeTag">—</span>
+              <span class="confidence" id="confidence">—</span>
+            </div>
+            <p class="verdict-reason" id="reason">—</p>
+            <button class="evidence-toggle" id="evidenceToggle">Show matched log lines</button>
+            <div class="evidence" id="evidence"></div>
+            <button class="copy-btn" id="copyBtn">Copy verdict</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="batch-body" id="batchMode">
+        <div class="batch-input">
+          <label for="batchbox">Paste multiple logs, separated by a line of three dashes (<code>---</code>), or upload several files:</label>
+          <textarea id="batchbox" placeholder="First failure log...
+
+---
+
+Second failure log..."></textarea>
+          <div class="upload-row">
+            <label class="upload-btn" for="batchFileInput">Upload multiple files</label>
+            <input type="file" id="batchFileInput" accept=".txt,.log" multiple hidden>
+            <span class="upload-filename" id="batchUploadFilename"></span>
+          </div>
+          <button class="classify-btn" id="batchClassifyBtn">Classify all</button>
+          <p class="batch-progress" id="batchProgress"></p>
+        </div>
+        <div class="batch-results" id="batchResults">
+          <p class="verdict-empty">Results will appear here as each log is classified.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="history" id="history">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Recent classifications</h2>
+      <p id="historyEmpty">Nothing classified yet this session — results you run above will show up here.</p>
+    </div>
+    <div class="history-list" id="historyList"></div>
+  </div>
+</section>
+
+
+<section class="causes" id="causes">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Five reasons a test fails that have nothing to do with your code</h2>
+      <p>Retrace checks for these patterns before it ever suggests a real regression.</p>
+    </div>
+
+    <div class="cause-row" data-cause="race condition">
+      <div class="cause-name">race condition</div>
+      <div class="cause-desc">The assertion runs before an async operation — a render, a fetch, a state update — has actually finished. Passes locally, fails under CI load.</div>
+    </div>
+    <div class="cause-row" data-cause="hard-coded wait">
+      <div class="cause-name">hard-coded wait</div>
+      <div class="cause-desc">A fixed sleep() or timeout was tuned for one machine's speed. Slower runners blow past it; faster ones pass by luck, not correctness.</div>
+    </div>
+    <div class="cause-row" data-cause="test pollution">
+      <div class="cause-name">test pollution</div>
+      <div class="cause-desc">Shared state — a database row, a global, a file on disk — leaks between tests. The failure depends on run order, not on what you changed.</div>
+    </div>
+    <div class="cause-row" data-cause="external dependency">
+      <div class="cause-name">external dependency</div>
+      <div class="cause-desc">A third-party API, DNS lookup, or unmocked network call timed out. The test is honestly reporting that something outside your code was unavailable.</div>
+    </div>
+    <div class="cause-row" data-cause="resource contention">
+      <div class="cause-name">resource contention</div>
+      <div class="cause-desc">Parallel workers on the same CI box compete for CPU, memory, or ports. The test is correct; the environment couldn't keep up.</div>
+    </div>
+  </div>
+</section>
+
+<section class="why" id="why">
+  <div>
+    <h2>Flaky tests cost trust, not just time</h2>
+    <p>Once a suite fails intermittently, engineers stop reading the red X. They re-run first and investigate never. That habit is what actually breaks quality gates — not the flakiness itself.</p>
+    <p>Retrace doesn't try to fix your tests. It reads the log, the stack trace, and the run history, and tells you which of the five categories the failure most likely belongs to, with the reasoning shown — not just a label.</p>
+  </div>
+  <div>
+    <div class="stat-block">
+      <div class="stat-num">1 in 3</div>
+      <div class="stat-cap">CI failures in active repos are flaky, not a real break — teams re-run first and investigate rarely.</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-num">&lt; 2 min</div>
+      <div class="stat-cap">Target time from a red pipeline to a classified cause, using only the log Retrace already has.</div>
+    </div>
+  </div>
+</section>
+
+<section class="cta">
+  <div class="wrap" style="display:flex; justify-content:space-between; align-items:center; gap:24px; flex-wrap:wrap; width:100%;">
+    <h2>Point Retrace at your next red build.</h2>
+    <div>
+      <form class="cta-form" onsubmit="return false;">
+        <input type="email" placeholder="you@team.dev" aria-label="Email address">
+        <button type="submit">Request access</button>
+      </form>
+      <div class="cta-note">CI integration for GitHub Actions and Jenkins. No card required.</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="display:flex; justify-content:space-between; align-items:center; width:100%; flex-wrap:wrap; gap:12px;">
+    <span>&copy; 2026 Retrace</span>
+    <div class="foot-links">
+      <a href="#">Privacy policy</a>
+      <a href="#">Terms of service</a>
+      <a href="#">Documentation</a>
+    </div>
+  </div>
+</footer>
+
+<script src="retrace.js"></script>
+
+</body>
+</html>
